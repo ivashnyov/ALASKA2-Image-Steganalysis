@@ -21,9 +21,9 @@ parser.add_argument("--data_folder", type=str, help="Path to folder with data", 
 parser.add_argument("--image_height", type=int, help="Height of images to train", default=512)
 parser.add_argument("--image_width", type=int, help="Width of images to train", default=512)
 parser.add_argument("--batch_size", type=int, help="Batch size", default=64)
-parser.add_argument("--num_workers", type=int, help="Number of workers", default=2)
+parser.add_argument("--num_workers", type=int, help="Number of workers", default=4)
 parser.add_argument("--num_epochs", type=int, help="Number of epochs", default=100)
-parser.add_argument("--lr", type=int, help="Starting learning rate", default=3e-4)
+parser.add_argument("--lr", type=int, help="Starting learning rate", default=1e-3)
 parser.add_argument("--log_path", type=str, help="Path to logs", default="logs")
 
 args = parser.parse_args()
