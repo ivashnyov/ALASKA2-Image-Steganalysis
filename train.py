@@ -49,16 +49,16 @@ transforms_val = A.Compose([
         ], p=1.0)
 
 train_dataset = DatasetAlaska(
-    kinds=dataset[dataset['fold'] == FOLD].kind.values,
-    image_names=dataset[dataset['fold'] == FOLD].image_name.values,
-    labels=dataset[dataset['fold'] == FOLD].label.values,
+    kinds=dataset[dataset['fold'] != FOLD].kind.values,
+    image_names=dataset[dataset['fold'] != FOLD].image_name.values,
+    labels=dataset[dataset['fold'] != FOLD].label.values,
     data_path=DATA_FOLDER,
     transforms=transforms_train
 )
 val_dataset = DatasetAlaska(
-    kinds=dataset[dataset['fold'] != FOLD].kind.values,
-    image_names=dataset[dataset['fold'] != FOLD].image_name.values,
-    labels=dataset[dataset['fold'] != FOLD].label.values,
+    kinds=dataset[dataset['fold'] == FOLD].kind.values,
+    image_names=dataset[dataset['fold'] == FOLD].image_name.values,
+    labels=dataset[dataset['fold'] == FOLD].label.values,
     data_path=DATA_FOLDER,
     transforms=transforms_val
 )
