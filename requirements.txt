@@ -1,0 +1,8 @@
+opencv_python_headless==4.2.0.32
+efficientnet_pytorch==0.6.3
+pandas==1.0.3
+numpy==1.16.5
+albumentations==0.4.5
+catalyst==20.7
+torch==1.5.1
+scikit_learn==0.23.1
