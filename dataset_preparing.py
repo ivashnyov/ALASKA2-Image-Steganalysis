@@ -1,12 +1,12 @@
 from glob import glob
 import random
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupKFold
 
 dataset = []
 
 for label, kind in enumerate(['Cover', 'JMiPOD', 'JUNIWARD', 'UERD']):
-    for path in glob('data/Cover/*.jpg'):
+    for path in glob('../input/alaska2-image-steganalysis/Cover/*.jpg'):
         dataset.append({
             'kind': kind,
             'image_name': path.split('/')[-1],
@@ -16,7 +16,10 @@ for label, kind in enumerate(['Cover', 'JMiPOD', 'JUNIWARD', 'UERD']):
 random.shuffle(dataset)
 dataset = pd.DataFrame(dataset)
 
-train_df, val_df = train_test_split(dataset, test_size=0.2, stratify=dataset["label"], random_state=69)
+gkf = GroupKFold(n_splits=5)
 
-train_df.to_csv('train.csv', index=False)
-val_df.to_csv('val.csv', index=False)
+dataset.loc[:, 'fold'] = 0
+for fold_number, (train_index, val_index) in enumerate(gkf.split(X=dataset.index, y=dataset['label'], groups=dataset['image_name'])):
+    dataset.loc[dataset.iloc[val_index].index, 'fold'] = fold_number
+
+dataset.to_csv('../input/alaska2-image-steganalysis/data.csv', index=False)

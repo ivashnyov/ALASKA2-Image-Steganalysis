@@ -10,33 +10,31 @@ from efficientnet_pytorch import EfficientNet
 from catalyst.utils import set_global_seed
 from catalyst.dl.runner import SupervisedRunner
 from catalyst.dl import CriterionCallback
-from catalyst.dl.callbacks import EarlyStoppingCallback, CriterionAggregatorCallback
+from catalyst.dl.callbacks import EarlyStoppingCallback, MetricAggregationCallback
 from catalyst.contrib.nn.optimizers import RAdam, Lookahead, Lamb
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 parser = ArgumentParser("Alaska")
 
-parser.add_argument("--cuda_visible_devices", type=str, help="GPUs for training", default="0, 1")
-parser.add_argument("--data_folder", type=str, help="Path to folder with data", default="data")
+parser.add_argument("--data_folder", type=str, help="Path to folder with data", default="../input/alaska2-image-steganalysis/")
 parser.add_argument("--image_height", type=int, help="Height of images to train", default=512)
 parser.add_argument("--image_width", type=int, help="Width of images to train", default=512)
-parser.add_argument("--batch_size", type=int, help="Batch size", default=64)
-parser.add_argument("--num_workers", type=int, help="Number of workers", default=4)
-parser.add_argument("--num_epochs", type=int, help="Number of epochs", default=100)
-parser.add_argument("--lr", type=int, help="Starting learning rate", default=1e-3)
+parser.add_argument("--batch_size", type=int, help="Batch size", default=36)
+parser.add_argument("--num_workers", type=int, help="Number of workers", default=12)
+parser.add_argument("--num_epochs", type=int, help="Number of epochs", default=40)
+parser.add_argument("--lr", type=int, help="Starting learning rate", default=3e-4)
 parser.add_argument("--log_path", type=str, help="Path to logs", default="logs")
+parser.add_argument("--fold", type=int, help="Fold to validate on", default=0)
+parser.add_argument("--model", type=str, help="Model to train", default='efficientnet-b6')
 
 args = parser.parse_args()
-
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_visible_devices
 
 set_global_seed(42)
 
 DATA_FOLDER = args.data_folder
+FOLD = args.fold
 
-train_data = pd.read_csv(f"{DATA_FOLDER}/train.csv")
-val_data = pd.read_csv(f"{DATA_FOLDER}/val.csv")
+dataset = pd.read_csv(f"{DATA_FOLDER}/data.csv")
 
 transforms_train = A.Compose([
             A.HorizontalFlip(p=0.5),
@@ -51,12 +49,16 @@ transforms_val = A.Compose([
         ], p=1.0)
 
 train_dataset = DatasetAlaska(
-    df=train_data,
+    kinds=dataset[dataset['fold'] == FOLD].kind.values,
+    image_names=dataset[dataset['fold'] == FOLD].image_name.values,
+    labels=dataset[dataset['fold'] == FOLD].label.values,
     data_path=DATA_FOLDER,
     transforms=transforms_train
 )
 val_dataset = DatasetAlaska(
-    df=val_data,
+    kinds=dataset[dataset['fold'] != FOLD].kind.values,
+    image_names=dataset[dataset['fold'] != FOLD].image_name.values,
+    labels=dataset[dataset['fold'] != FOLD].label.values,
     data_path=DATA_FOLDER,
     transforms=transforms_val
 )
@@ -76,7 +78,7 @@ val_loader = DataLoader(
     shuffle=False
 )
 
-model = AlaskaModel(backbone='efficientnet-b2', classes=4)
+model = AlaskaModel(backbone=args.model, classes=4)
 model.cuda()
 
 loaders = collections.OrderedDict()
@@ -101,9 +103,9 @@ callbacks = [
         criterion_key="label_loss",
         multiplier=1.0,
     ),
-    CriterionAggregatorCallback(
+    MetricAggregationCallback(
         prefix="loss",
-        loss_keys=[
+        metrics=[
             "label_loss",
         ],
     ),
@@ -122,7 +124,7 @@ runner.train(
     logdir=args.log_path,
     scheduler=scheduler,
     fp16=True,
-    num_epochs=100,
+    num_epochs=args.num_epochs,
     verbose=True
 )
 

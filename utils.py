@@ -9,18 +9,22 @@ from torch.utils.data import Dataset
 import albumentations as A
 from sklearn.metrics import f1_score, roc_curve, auc
 from catalyst.dl import MetricCallback
+from catalyst.core import Callback, CallbackOrder, State
 from efficientnet_pytorch import EfficientNet
+from collections import defaultdict
 
 class DatasetAlaska(Dataset):
-    def __init__(self, df, data_path, transforms=None):
-        self.df = df
+    def __init__(self, kinds, image_names, labels, data_path, transforms=None):
+        self.kinds = kinds
+        self.image_names = image_names
+        self.labels = labels
         self.data_path = data_path
         self.transforms = transforms
 
     def __getitem__(self, idx):
-        image_name = self.df['image_name'].values[idx]
-        kind = self.df['kind'].values[idx]
-        label = self.df['label'].values[idx]
+        image_name = self.image_names[idx]
+        kind = self.kinds[idx]
+        label = self.labels[idx]
 
         image = cv2.imread(f'{self.data_path}/{kind}/{image_name}')
 
@@ -39,7 +43,7 @@ class DatasetAlaska(Dataset):
         return output  
 
     def __len__(self):
-        return len(self.df)
+        return len(self.image_names)
 
 def weighted_auc(
         outputs: torch.Tensor,
@@ -62,7 +66,6 @@ def weighted_auc(
     targets[targets > 1] = 1
     outputs = 1 - nn.functional.softmax(outputs, dim=1).data.cpu().numpy()[:,0]
     fpr, tpr, thresholds = roc_curve(targets, outputs, pos_label=1)
-    
     # size of subsets
     areas = np.array(tpr_thresholds[1:]) - np.array(tpr_thresholds[:-1])
     
@@ -74,7 +77,8 @@ def weighted_auc(
         y_min = tpr_thresholds[idx]
         y_max = tpr_thresholds[idx + 1]
         mask = (y_min < tpr) & (tpr < y_max)
-
+        if mask.sum() == 0:
+            continue
         x_padding = np.linspace(fpr[mask][-1], 1, 100)
 
         x = np.concatenate([fpr[mask], x_padding])
@@ -88,7 +92,7 @@ def weighted_auc(
     return competition_metric / normalization
 
 
-class WeightedAUC(MetricCallback):
+class WeightedAUC(Callback):
     """
     F1 score metric callback.
     """
@@ -110,18 +114,43 @@ class WeightedAUC(MetricCallback):
                 Must be one of ['none', 'Sigmoid', 'Softmax2d']
         """
 
-        super().__init__(
-            prefix=prefix,
-            metric_fn=weighted_auc,
-            input_key=input_key,
-            output_key=output_key,
-            activation=activation
+        super().__init__(CallbackOrder.Metric)
+        self.input_key = input_key
+        self.output_key = output_key
+        self.prefix = prefix
+        self.predictions = defaultdict(lambda: [])
+        self.metric_fn = weighted_auc
+
+    def on_epoch_start(self, state) -> None:
+        self.accum = []
+
+    def on_loader_start(self, state: State):
+        self.predictions = defaultdict(lambda: [])
+
+    def on_batch_end(self, state: State) -> None:
+        targets = state.input[self.input_key]
+        outputs = state.output[self.output_key]
+        self.predictions[self.input_key].append(targets.detach().cpu())
+        self.predictions[self.output_key].append(outputs.detach().cpu())
+        metric = self.metric_fn(outputs, targets)
+        state.batch_metrics[f"batch_{self.prefix}"] = metric
+
+    def on_loader_end(self, state) -> None:
+        self.predictions = {
+            key: torch.cat(value, dim=0)
+            for key, value in self.predictions.items()
+        }
+        targets = self.predictions[self.input_key]
+        outputs = self.predictions[self.output_key]
+        value = self.metric_fn(
+            outputs, targets
         )
+        state.loader_metrics[self.prefix] = value
 
 class AlaskaModel(nn.Module):
     def __init__(self, backbone='efficientnet-b0', classes=4):
         super(AlaskaModel, self).__init__()
-        self.model = EfficientNet.from_pretrained('efficientnet-b0', num_classes=classes)
+        self.model = EfficientNet.from_pretrained(backbone, num_classes=classes)
         
     def forward(self, x):
         label = self.model(x)
